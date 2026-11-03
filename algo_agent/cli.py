@@ -177,6 +177,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_app(args: argparse.Namespace) -> int:
+    from .app.server import run
+    run(host=args.host, port=args.port, data_dir=args.data_dir, open_browser=not args.no_browser,
+        pin=args.pin)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="algo-agent", description=__doc__)
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -213,6 +220,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--live", action="store_true",
                    help="alpaca: use the LIVE account (also needs ALGO_AGENT_ALLOW_LIVE=1)")
     p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("app", help="start the web app (dashboard, broker login, auto-trading)")
+    p.add_argument("--host", default="127.0.0.1",
+                   help="127.0.0.1 = this device only; 0.0.0.0 = allow your tablet/phone on the LAN")
+    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--data-dir", help="where settings/tokens/logs live (default ~/.algo_agent)")
+    p.add_argument("--pin", help="set the app PIN (required with --host 0.0.0.0)")
+    p.add_argument("--no-browser", action="store_true", help="don't open a browser window")
+    p.set_defaults(func=cmd_app)
     return parser
 
 

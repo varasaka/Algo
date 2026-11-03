@@ -8,11 +8,10 @@ version = "0.1.0"
 description = "A modular algorithmic trading agent: strategies, risk management, backtesting and paper/live execution."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.24", "pandas>=2.0"]
+dependencies = ["numpy>=1.24", "pandas>=2.0", "requests>=2.28"]
 
 [project.optional-dependencies]
 yahoo = ["yfinance>=0.2"]
-live = ["requests>=2.28"]
 dev = ["pytest>=7"]
 
 [project.scripts]
@@ -20,3 +19,6 @@ algo-agent = "algo_agent.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["algo_agent*"]
+
+[tool.setuptools.package-data]
+"algo_agent.app" = ["static/*"]

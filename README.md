@@ -1,7 +1,10 @@
 # algo-agent
 
-A modular algorithmic trading agent in Python. One agent drives
-**backtests**, **paper trading** and **live trading (Alpaca)**. Only the broker
+A modular algorithmic trading agent in Python, with an **app for Indian
+brokers (Zerodha Kite, Paytm Money)** that trades automatically. See
+[Auto-trading app](#auto-trading-app-zerodha--paytm-money) below.
+
+The core engine: one agent drives **backtests**, **paper trading** and **live trading (Alpaca)**. Only the broker
 and the bar feed change between them, so what you backtest is what you run.
 
 ```
@@ -90,6 +93,81 @@ python -m algo_agent run -c configs/alpaca_paper.toml --broker alpaca --feed alp
 - Real-money trading needs **both** `--live` and `ALGO_AGENT_ALLOW_LIVE=1`.
 - `--broker paper --feed alpaca` trades live Alpaca data against the local simulator.
 
+## Auto-trading app (Zerodha / Paytm Money)
+
+A web app with a dashboard, broker login, strategy and risk settings,
+backtesting and an activity log. It runs on a PC, Mac, Linux server or Android
+tablet (via Termux). Your phone or tablet browser can open it and install it
+like an app.
+
+### Install and start
+
+| Device | How |
+|---|---|
+| **Windows** | Install Python 3.10+ from python.org (tick "Add to PATH"), then double-click `install\start-windows.bat` |
+| **macOS / Linux** | `./install/start.sh` |
+| **Android tablet (on the tablet itself)** | Install **Termux** from F-Droid, then `pkg install python git && git clone <this repo> && cd Algo && ./install/start.sh`, then open `http://127.0.0.1:8000` in Chrome and choose **Add to Home screen / Install app** |
+| **Tablet as a screen for a PC/server** | On the PC: `./install/start.sh --host 0.0.0.0 --pin 482193`. On the tablet: open `http://<PC-IP>:8000` and add it to the home screen |
+| **VPS with a static IP (recommended for Zerodha live)** | `docker build -t algo-agent . && docker run -d --restart unless-stopped -p 8000:8000 -v algo-data:/data -e ALGO_AGENT_PIN=482193 algo-agent`, behind HTTPS (e.g. Caddy) |
+
+Or just run `pip install -e .` and then `python -m algo_agent app`.
+Settings, tokens and logs are stored in `~/.algo_agent`. Set `ALGO_AGENT_DEMO_DATA=1`
+to try the whole app offline on synthetic prices.
+
+### Daily workflow
+
+1. **Broker tab:** pick Zerodha or Paytm Money and enter your API key and secret
+   from the developer console. Set the app's redirect URL there to the address
+   shown in the app.
+2. **Every trading day,** tap **Log in to broker**. You log in on the
+   broker's own page and get redirected back. Brokers require this daily, and
+   the app never sees your password.
+3. **Strategy tab:** choose symbols (`NSE:RELIANCE, NSE:TCS`), the capital the bot
+   may use, the strategy and risk limits, then **Backtest** it.
+4. **Dashboard:** press **Start auto-trading**. On daily candles the bot acts once
+   a day at the run time (default 09:20 IST). On intraday candles it acts after
+   every candle and squares off MIS positions at 15:10.
+
+### Modes: always go Paper → Shadow → Live
+
+| Mode | What happens |
+|---|---|
+| **Paper** | Fake money, real prices. No broker needed. |
+| **Shadow** | Reads your **real** holdings and cash, and logs the orders it *would* place, but sends nothing. Use it for a few weeks and compare with your broker app. |
+| **Live** | Sends real orders automatically. Needs typing `I UNDERSTAND THE RISK`. Changing broker or mode turns it off again. |
+
+### Safety built in
+
+- **Capital cap:** the bot sizes positions from the capital you allocate, not your whole account.
+- **Hands off your own trades:** the bot only trades its own symbols, and only
+  cancels orders it placed (tag `algoagent` on Kite).
+- **Kill switch:** closes all positions the bot manages and stops it.
+- **Risk limits:** stop-losses, a daily loss limit and a max-drawdown halt (see Risk management above).
+- **PIN lock:** required whenever the app is reachable from other devices. Wrong
+  PINs are rate-limited, and cross-site requests are blocked.
+- **Resumes after restart:** if the app restarts mid-day it carries on where it left off.
+
+### Broker-specific notes (check current rules before going live)
+
+- **Zerodha Kite Connect.** Endpoints and the login checksum match Zerodha's official SDK.
+  - **Static IP:** SEBI's retail-algo rules mean Kite only accepts *order* calls
+    from the static IP registered in your developer console. Home broadband and
+    mobile data usually don't have one, so run the app on a VPS with a static
+    IP, or get one from your ISP.
+  - **Market orders:** sent with `market_protection=-1` (required for API market
+    orders). Or choose *Limit* orders in the app.
+  - **Price data:** quotes and historical candles need the paid Kite Connect plan.
+    The default free source is Yahoo (`.NS`/`.BO`), which is fine for daily
+    candles but may be delayed for intraday.
+- **Paytm Money (experimental).** Endpoints and order fields follow Paytm Money's
+  official SDK, but some response field names are undocumented, so parsing is
+  tolerant. **Use Shadow mode first** and check that positions and cash match.
+- **Order volume:** SEBI rules for self-built retail algos have order-rate
+  thresholds above which registration is needed. This bot places a few orders per
+  day, but stay within your broker's limits.
+- **Holidays:** add NSE holidays in the Strategy tab each year. On a holiday there
+  are no new candles, so the bot simply does nothing.
+
 ## Layout
 
 ```
@@ -105,7 +183,10 @@ algo_agent/
   data.py         synthetic / CSV / Yahoo loaders
   indicators.py   SMA, EMA, RSI, ATR, MACD, Bollinger, vol
   config.py, cli.py
+  india/          Zerodha Kite + Paytm Money brokers, shadow broker, IST market hours, Yahoo data
+  app/            web app: engine (scheduler), server (stdlib), static/ (UI + PWA)
 configs/          example TOML configs
+install/          one-click launchers (Windows, macOS/Linux/Termux)
 tests/            pytest suite
 ```
 

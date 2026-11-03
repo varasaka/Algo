@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Algo Agent</title>
+  <meta name="description" content="Automated trading agent for Zerodha Kite and Paytm Money">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Lock screen -->
+  <div id="lock" class="lock" hidden>
+    <form id="lock-form" class="lock-card">
+      <img src="/icon.svg" alt="" width="56" height="56">
+      <h1>Algo Agent</h1>
+      <p id="lock-msg">Enter your PIN</p>
+      <input id="pin" type="password" inputmode="numeric" autocomplete="current-password"
+             pattern="[0-9]*" minlength="4" maxlength="12" placeholder="PIN" required>
+      <button class="btn primary" type="submit" id="lock-btn">Unlock</button>
+      <p class="err" id="lock-err"></p>
+    </form>
+  </div>
+
+  <header class="top">
+    <div class="brand"><img src="/icon.svg" alt="" width="28" height="28"> Algo Agent</div>
+    <div class="top-right">
+      <span id="mode-badge" class="badge">—</span>
+      <span id="run-dot" class="dot" title="stopped"></span>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <a href="#dashboard" data-tab="dashboard">Dashboard</a>
+    <a href="#broker" data-tab="broker">Broker</a>
+    <a href="#strategy" data-tab="strategy">Strategy</a>
+    <a href="#backtest" data-tab="backtest">Backtest</a>
+    <a href="#activity" data-tab="activity">Activity</a>
+  </nav>
+
+  <main>
+    <div id="toast" class="toast" hidden></div>
+
+    <!-- DASHBOARD -->
+    <section id="tab-dashboard" class="tab">
+      <div class="banner warn" id="banner" hidden></div>
+      <div class="grid stats">
+        <div class="card stat"><span class="label">Status</span><span class="value" id="st-status">—</span><span class="sub" id="st-market">—</span></div>
+        <div class="card stat"><span class="label">Equity (bot)</span><span class="value" id="st-equity">—</span><span class="sub" id="st-cash">—</span></div>
+        <div class="card stat"><span class="label">Last run</span><span class="value small" id="st-last">—</span><span class="sub" id="st-broker">—</span></div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="btn-start">Start auto-trading</button>
+        <button class="btn" id="btn-stop">Stop</button>
+        <button class="btn" id="btn-run">Run now</button>
+        <button class="btn danger" id="btn-kill" title="Stop and close all positions the bot manages">Kill switch</button>
+      </div>
+      <div class="card">
+        <h2>Equity</h2>
+        <div id="eq-chart" class="chart"><p class="muted">The chart appears after the bot has run at least twice.</p></div>
+      </div>
+      <div class="card">
+        <h2>Positions</h2>
+        <div class="table-wrap"><table id="pos-table"><thead><tr><th>Symbol</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Value</th><th class="num">Stop</th><th>Bot</th></tr></thead><tbody></tbody></table></div>
+        <p class="muted" id="pos-empty">No open positions.</p>
+      </div>
+      <div class="card">
+        <h2>Current signals</h2>
+        <div id="signals" class="chips"><span class="muted">Shown after the first run.</span></div>
+      </div>
+    </section>
+
+    <!-- BROKER -->
+    <section id="tab-broker" class="tab" hidden>
+      <div class="card">
+        <h2>1 · Choose broker</h2>
+        <div class="seg" id="broker-seg">
+          <label><input type="radio" name="broker" value="paper"><span>Paper (practice)</span></label>
+          <label><input type="radio" name="broker" value="kite"><span>Zerodha Kite</span></label>
+          <label><input type="radio" name="broker" value="paytm"><span>Paytm Money <small>beta</small></span></label>
+        </div>
+        <div id="cred-kite" class="creds" hidden>
+          <p class="muted">Create an app at <b>developers.kite.trade</b>. Set its <b>Redirect URL</b> to:</p>
+          <code class="copy" id="kite-redirect"></code>
+          <label>API key <input id="kite_api_key" autocomplete="off"></label>
+          <label>API secret <input id="kite_api_secret" type="password" autocomplete="off"></label>
+          <p class="note">Zerodha only accepts orders from the <b>static IP</b> you register in the developer console. Run this app on that machine.</p>
+        </div>
+        <div id="cred-paytm" class="creds" hidden>
+          <p class="muted">Create an app at <b>developer.paytmmoney.com</b>. Set its <b>Redirect URL</b> to:</p>
+          <code class="copy" id="paytm-redirect"></code>
+          <label>API key <input id="paytm_api_key" autocomplete="off"></label>
+          <label>API secret <input id="paytm_api_secret" type="password" autocomplete="off"></label>
+          <p class="note">Paytm Money support is <b>experimental</b>. Use Shadow mode first and check that positions match your Paytm Money app.</p>
+        </div>
+        <button class="btn primary" id="btn-save-broker">Save broker</button>
+      </div>
+
+      <div class="card" id="login-card">
+        <h2>2 · Daily login</h2>
+        <p class="muted">Brokers require a fresh login every trading day (SEBI rule). You log in on the broker's own page, so this app never sees your password.</p>
+        <p>Status: <b id="conn-status">—</b></p>
+        <div class="actions">
+          <button class="btn primary" id="btn-login">Log in to broker</button>
+          <button class="btn" id="btn-test">Test connection</button>
+          <button class="btn" id="btn-logout">Log out</button>
+        </div>
+        <details>
+          <summary>Redirect not working? Paste the token manually</summary>
+          <p class="muted">After logging in, copy the <code>request_token</code> (Zerodha) or <code>requestToken</code> (Paytm) value from the address bar.</p>
+          <div class="row"><input id="manual-token" placeholder="request token"><button class="btn" id="btn-token">Connect</button></div>
+        </details>
+        <pre id="test-out" class="out" hidden></pre>
+      </div>
+
+      <div class="card">
+        <h2>3 · Trading mode</h2>
+        <div class="modes">
+          <label class="mode"><input type="radio" name="mode" value="paper"><span><b>Paper</b> Fake money, real prices. Safe for learning.</span></label>
+          <label class="mode"><input type="radio" name="mode" value="shadow"><span><b>Shadow</b> Reads your real account and shows the orders it <i>would</i> place, but sends none.</span></label>
+          <label class="mode live"><input type="radio" name="mode" value="live"><span><b>Live</b> Places real orders with real money.</span></label>
+        </div>
+        <button class="btn primary" id="btn-save-mode">Save mode</button>
+      </div>
+    </section>
+
+    <!-- STRATEGY -->
+    <section id="tab-strategy" class="tab" hidden>
+      <form id="strategy-form" class="card form">
+        <h2>What to trade</h2>
+        <label>Symbols <small>comma separated, e.g. NSE:RELIANCE, NSE:TCS</small>
+          <textarea id="symbols" rows="2"></textarea></label>
+        <div class="grid2">
+          <label>Capital for the bot (₹) <input id="capital" type="number" min="1000" step="1000"></label>
+          <label>Product
+            <select id="product"><option value="CNC">CNC (delivery / swing)</option><option value="MIS">MIS (intraday)</option></select></label>
+          <label>Timeframe
+            <select id="timeframe">
+              <option value="day">Daily candles</option><option value="60minute">60 min</option>
+              <option value="30minute">30 min</option><option value="15minute">15 min</option><option value="5minute">5 min</option>
+            </select></label>
+          <label>Daily run time (IST) <input id="run_at" type="time"></label>
+          <label>Intraday square-off (IST) <input id="square_off_at" type="time"></label>
+          <label>Order type
+            <select id="order_style"><option value="market">Market (with protection)</option><option value="limit">Limit (price ± buffer)</option></select></label>
+          <label>Limit buffer % <input id="limit_buffer_pct" type="number" step="0.1" min="0"></label>
+          <label>Price data
+            <select id="data_source"><option value="yahoo">Free (Yahoo, may be delayed)</option><option value="broker">Zerodha historical API (paid plan)</option></select></label>
+        </div>
+
+        <h2>Strategy</h2>
+        <label>Strategy <select id="strategy"></select></label>
+        <p class="muted" id="strategy-doc"></p>
+        <div id="params" class="grid2"></div>
+
+        <h2>Risk limits</h2>
+        <div class="grid2" id="risk">
+          <label>Max % of capital per stock <input data-risk="max_position_pct" data-pct type="number" step="1" min="1" max="100"></label>
+          <label>Max % lost per trade (at stop) <input data-risk="risk_per_trade" data-pct type="number" step="0.1" min="0"></label>
+          <label>Stop-loss distance (× ATR) <input data-risk="stop_atr_mult" type="number" step="0.5" min="0"></label>
+          <label>Target volatility % <input data-risk="target_vol" data-pct type="number" step="1" min="0"></label>
+          <label>Halt at drawdown % <input data-risk="max_drawdown" data-pct type="number" step="1" min="0"></label>
+          <label>Daily loss limit % <input data-risk="daily_loss_limit" data-pct type="number" step="0.5" min="0"></label>
+          <label class="check"><input data-risk="allow_short" type="checkbox"> Allow short selling (MIS only)</label>
+        </div>
+
+        <h2>Market holidays</h2>
+        <label>Dates when NSE is closed (YYYY-MM-DD, one per line) <small>update from the NSE website each year</small>
+          <textarea id="holidays" rows="3"></textarea></label>
+        <button class="btn primary" type="submit">Save strategy</button>
+      </form>
+    </section>
+
+    <!-- BACKTEST -->
+    <section id="tab-backtest" class="tab" hidden>
+      <div class="card">
+        <h2>Backtest current settings</h2>
+        <p class="muted">Tests the saved strategy on past prices with costs and slippage included. Past results do not predict future returns.</p>
+        <button class="btn primary" id="btn-bt">Run backtest</button>
+        <div id="bt-out" hidden>
+          <div class="grid stats" id="bt-metrics"></div>
+          <div id="bt-chart" class="chart"></div>
+          <h2>Recent trades</h2>
+          <div class="table-wrap"><table id="bt-trades"><thead><tr><th>Symbol</th><th>Entry</th><th>Exit</th><th class="num">Qty</th><th class="num">P&amp;L ₹</th><th>Exit reason</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACTIVITY -->
+    <section id="tab-activity" class="tab" hidden>
+      <div class="card">
+        <h2>Activity log</h2>
+        <p class="muted">Every decision the bot makes, and why.</p>
+        <ul id="journal" class="journal"></ul>
+      </div>
+      <div class="card">
+        <h2>Security</h2>
+        <form id="pin-form" class="row">
+          <input id="new-pin" type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="12" placeholder="New PIN (4-12 digits)">
+          <button class="btn" type="submit">Set PIN</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="live-dialog">
+    <form method="dialog" class="dialog">
+      <h2>Enable live trading?</h2>
+      <p>The bot will place <b>real orders with real money</b>, without asking you first. You can lose money. Only continue if you:</p>
+      <ul>
+        <li>ran it in <b>Shadow mode</b> and checked its decisions,</li>
+        <li>set a capital amount you can afford to lose, and</li>
+        <li>know how to stop it (Stop / Kill switch, or your broker app).</li>
+      </ul>
+      <label>Type <b>I UNDERSTAND THE RISK</b> <input id="live-phrase" autocomplete="off"></label>
+      <div class="actions"><button class="btn" value="cancel">Cancel</button><button class="btn danger" id="live-ok" value="ok">Enable live trading</button></div>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>

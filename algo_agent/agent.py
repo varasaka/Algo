@@ -95,6 +95,8 @@ class TradingAgent:
 
         account = self.broker.account()
         equity = account.equity
+        # Size with the allocated capital if it is smaller than the account.
+        sizing_equity = min(equity, account.capital) if account.capital else equity
         if self._check_circuit_breakers(timestamp, equity):
             self._flatten(timestamp, account.positions, self.halt_reason or "daily_loss_limit")
             return self.journal[start:]
@@ -130,11 +132,11 @@ class TradingAgent:
             if st.cooldown > 0 and not held:
                 targets[sym], reasons[sym] = 0.0, f"cooldown({st.cooldown})"
                 continue
-            qty = self.risk.target_quantity(signal, bar.close, equity, atr, vol, n_active)
+            qty = self.risk.target_quantity(signal, bar.close, sizing_equity, atr, vol, n_active)
             targets[sym], reasons[sym] = qty, f"signal={signal:+.2f}"
 
-        targets = self._apply_gross_cap(targets, prices, equity)
-        self._execute(timestamp, targets, reasons, prices, atrs, account.positions, equity)
+        targets = self._apply_gross_cap(targets, prices, sizing_equity)
+        self._execute(timestamp, targets, reasons, prices, atrs, account.positions, sizing_equity)
         return self.journal[start:]
 
     # ------------------------------------------------------------ internals
@@ -184,11 +186,19 @@ class TradingAgent:
             return True
         return False
 
+    def flatten(self, ts: pd.Timestamp, reason: str = "manual_flatten") -> None:
+        """Close every position in the agent's symbols."""
+        positions = self.broker.account().positions
+        self._flatten(ts, {s: q for s, q in positions.items() if s in self.state}, reason)
+
     def _flatten(self, ts: pd.Timestamp, positions: dict[str, float], reason: str) -> None:
         self.broker.cancel_all()
         for sym, qty in positions.items():
+            if sym not in self.state:
+                continue  # never touch positions the agent doesn't manage
             if qty:
-                self.broker.submit_order(sym, -qty, reason=reason, timestamp=ts)
+                last = self.state[sym].history[-1].close if self.state[sym].history else None
+                self.broker.submit_order(sym, -qty, reason=reason, timestamp=ts, ref_price=last)
                 self.journal.append({"time": ts, "symbol": sym, "action": "order", "qty": -qty,
                                      "reason": reason})
             if sym in self.state:
@@ -217,7 +227,8 @@ class TradingAgent:
             opening = target and not held
             small = abs(delta) * price < cfg.rebalance_threshold * equity
             if delta and (closing or opening or flipping or not small):
-                self.broker.submit_order(sym, delta, reason=reasons[sym], timestamp=ts)
+                self.broker.submit_order(sym, delta, reason=reasons[sym], timestamp=ts,
+                                         ref_price=price)
                 action = "exit" if closing else "enter" if opening or flipping else "rebalance"
                 self.journal.append({"time": ts, "symbol": sym, "action": action, "qty": delta,
                                      "target": target, "price": round(price, 4),

@@ -77,6 +77,11 @@ class Account:
     cash: float
     equity: float
     positions: dict[str, float] = field(default_factory=dict)
+    #: Optional cap on the equity the agent may size positions with (the
+    #: capital you allocate to the bot, when the account holds more).
+    capital: float | None = None
+    #: Last known prices for symbols the broker reported on.
+    prices: dict[str, float] = field(default_factory=dict)
 
 
 class Broker(ABC):
@@ -85,7 +90,10 @@ class Broker(ABC):
 
     @abstractmethod
     def submit_order(self, symbol: str, qty: float, reason: str = "",
-                     timestamp: pd.Timestamp | None = None) -> Order: ...
+                     timestamp: pd.Timestamp | None = None,
+                     ref_price: float | None = None) -> Order:
+        """Queue/send an order. ``ref_price`` is the agent's last seen price,
+        which brokers may use to price limit orders when no live quote exists."""
 
     @abstractmethod
     def cancel_all(self) -> None: ...
@@ -135,10 +143,12 @@ class PaperBroker(Broker):
             cash=self.cash,
             equity=self.equity(),
             positions={s: p.qty for s, p in self.positions.items() if p.qty != 0},
+            prices=dict(self.prices),
         )
 
     def submit_order(self, symbol: str, qty: float, reason: str = "",
-                     timestamp: pd.Timestamp | None = None) -> Order:
+                     timestamp: pd.Timestamp | None = None,
+                     ref_price: float | None = None) -> Order:
         if not self.allow_fractional:
             qty = float(int(qty))  # truncate toward zero
         order = Order(id=str(next(self._ids)), symbol=symbol, qty=qty, reason=reason,
@@ -171,6 +181,34 @@ class PaperBroker(Broker):
         self.mark({s: b.close for s, b in bars.items()})
         self._unread_fills.extend(new_fills)
         return new_fills
+
+    def fill_pending(self, prices: dict[str, float], ts: pd.Timestamp) -> list[Fill]:
+        """Fill pending orders immediately at ``prices`` (used by the app's paper
+        mode, where orders should execute at the current price, not a later bar)."""
+        fills, keep = [], []
+        for order in self.pending:
+            if order.symbol in prices:
+                fills.append(self._fill(order, prices[order.symbol], ts))
+            else:
+                keep.append(order)
+        self.pending = keep
+        self.mark(prices)
+        self._unread_fills.extend(fills)
+        return fills
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"cash": self.cash, "prices": self.prices,
+                "positions": {s: {"qty": p.qty, "avg_price": p.avg_price,
+                                  "opened": p.opened.isoformat() if p.opened is not None else None}
+                              for s, p in self.positions.items() if p.qty}}
+
+    def load_dict(self, d: dict[str, Any]) -> None:
+        self.cash = float(d.get("cash", self.cash))
+        self.prices = {k: float(v) for k, v in d.get("prices", {}).items()}
+        self.positions = {
+            s: Position(float(p["qty"]), float(p["avg_price"]),
+                        pd.Timestamp(p["opened"]) if p.get("opened") else None)
+            for s, p in d.get("positions", {}).items()}
 
     # -- internals ----------------------------------------------------------
     def equity(self) -> float:
@@ -262,7 +300,8 @@ class AlpacaBroker(Broker):
         )
 
     def submit_order(self, symbol: str, qty: float, reason: str = "",
-                     timestamp: pd.Timestamp | None = None) -> Order:
+                     timestamp: pd.Timestamp | None = None,
+                     ref_price: float | None = None) -> Order:
         qty = float(int(qty))
         if qty == 0:
             return Order(id="noop", symbol=symbol, qty=0.0, reason=reason, created=timestamp)
