@@ -1,0 +1,41 @@
+# Example configuration. Run with:
+#   python -m algo_agent backtest -c configs/default.toml
+
+[agent]
+symbols = ["AAA", "BBB", "CCC"]
+initial_cash = 100_000
+broker = "paper"                   # paper | alpaca
+poll_seconds = 60
+journal_path = "state/journal.jsonl"
+
+[data]
+source = "synthetic"               # synthetic | csv | yahoo
+# data_dir = "data"                # for csv: expects data/<SYMBOL>.csv
+# start = "2018-01-01"
+n_bars = 1500
+seed = 7
+
+[strategy]
+name = "ensemble"
+members = [
+  { name = "sma_crossover", params = { fast = 20, slow = 100 } },
+  { name = "momentum" },
+  { name = "rsi_mean_reversion" },
+]
+weights = [1.0, 1.0, 0.5]
+
+[execution]
+commission_bps = 1.0
+slippage_bps = 2.0
+
+[risk]
+max_position_pct = 0.5
+max_gross_exposure = 1.0
+target_vol = 0.20
+risk_per_trade = 0.02
+stop_atr_mult = 3.0
+max_drawdown = 0.25
+daily_loss_limit = 0.05
+rebalance_threshold = 0.05
+cooldown_bars = 5
+allow_short = false

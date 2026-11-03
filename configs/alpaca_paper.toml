@@ -1,0 +1,19 @@
+# Paper trading on Alpaca. Needs ALPACA_API_KEY / ALPACA_SECRET_KEY.
+#   python -m algo_agent run -c configs/alpaca_paper.toml --broker alpaca --feed alpaca
+
+[agent]
+symbols = ["SPY", "QQQ", "IWM"]
+broker = "alpaca"
+poll_seconds = 300
+journal_path = "state/alpaca_journal.jsonl"
+
+[strategy]
+name = "momentum"
+trend_window = 100
+
+[risk]
+max_position_pct = 0.33
+target_vol = 0.15
+risk_per_trade = 0.01
+max_drawdown = 0.15
+daily_loss_limit = 0.03
